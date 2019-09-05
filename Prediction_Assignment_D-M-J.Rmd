@@ -1,0 +1,179 @@
+---
+title: '"Practical Machine Learning - Prediction Assigment'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Summary
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. Prediction models on the training set were built using three different algorithms, namely 'Decision Tree', 'General Boosted Model' and 'Random Forest'.  These prediction models were applied to the 20 test cases from the test data. Since the "Random Forest" model had the highest accuracy, the predictions of this model should be the most reliable.
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3xsbS5bVX
+
+# Data 
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. With kind acknowledgment to the authors.
+
+Description of the datasets as provided by the authors:
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg)."
+
+Following (down)loading the dataset, the relevant variables were extracted from the training and test sets, respectivley, resulting in a total of 53 variables The training set was split into a training and a test set.
+
+```{r echo=TRUE}
+
+# load libraries
+library(caret)
+library(kernlab)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(ggcorrplot)
+library(factoextra)
+set.seed(32345)
+
+# (down)load datasets
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "./UrlTrain.csv")
+training <- read.csv("./UrlTrain.csv", na.strings=c("NA","#DIV/0!",""))
+
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile = "./UrlTest.csv")
+testing <- read.csv("./UrlTest.csv", na.strings=c("NA","#DIV/0!",""))
+
+# Data cleaning 
+# Extraction of relevant variables from the testset excluding all variables with NA's (which are statical summaries of individual variables) and the first 7 variables (because they are not numeric and not related to the time serie)
+variables <- names(testing[,colSums(is.na(testing)) == 0])[8:59]
+
+training <- training[,c(variables,"classe")]
+testing <- testing[,c(variables,"problem_id")]
+dim(training)
+dim(testing)
+
+# Split training set in training (70%) and test sets (30%) 
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+Train <- training[inTrain, ]
+Test  <- training[-inTrain, ]
+dim(Train)
+dim (Test)
+```
+
+# Exploratory Analysis
+
+Principal component analysis was performed to show the dependencies between the variables in a multi-dimensional space. The scores plot shows a clear separation between the 5 groups and the loading plot shows the variables driving the separation.
+
+```{r echo=TRUE}
+# PCA
+pca <- prcomp(Train[, -53],scale.=T, center=T)
+fviz_pca_var(pca, col.var = "contrib")
+fviz_pca_ind(pca, col.ind = "cos2")
+```
+
+
+# Prediction Models
+
+Prediction models were built using three different methods.
+
+1. Method: Decision Tree
+
+Performance of training set
+
+```{r echo=TRUE}
+set.seed(32345)
+# Building model on training set
+modelDT <- rpart(classe ~ ., data = Train, method="class")
+fancyRpartPlot(modelDT, sub="classification based on decision tree")
+```
+
+Performance of test set on the training model
+```{r echo=TRUE}
+# Predicting on Test dataset
+predictDT <- predict(modelDT, newdata=Test, type="class")
+confusion_matrix_DT <- confusionMatrix(predictDT, Test$classe)
+confusion_matrix_DT
+```
+
+2. Method: Generalized Boosted Model
+
+Performance of training set
+```{r echo=TRUE}
+set.seed(32345)
+# Building model on training set
+ctrlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modelGBM <- train(classe ~ ., data=Train, method = "gbm", trControl = ctrlGBM, verbose = FALSE)
+modelGBM$finalModel
+```
+
+Performance of test set on the training model
+```{r echo=TRUE}
+# Predicting on Test dataset
+predictGBM <- predict(modelGBM, newdata=Test)
+confusion_matrix_GBM <- confusionMatrix(predictGBM, Test$classe)
+confusion_matrix_GBM
+```
+
+3. Method: Random Forest
+
+Performance of training set
+```{r echo=TRUE}
+set.seed(32345)
+# Building model on training set
+ctrRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modelRF <- train(classe ~ ., data=Train, method="rf", trControl=ctrRF)
+modelRF$finalModel
+```
+
+Performance of test set on the training model
+```{r echo=TRUE}
+# Predicting on Test dataset
+predictRF <- predict(modelRF, newdata=Test)
+confusion_matrix_RF <- confusionMatrix(predictRF, Test$classe)
+confusion_matrix_RF
+```
+
+
+
+
+Conclusion:
+The accuracy of the 3 models based on 3 different methods are:
+
+
+Decision Tree : 0.7344
+GBM : 0.963
+Random Forest : 0.9944
+
+The model based on Random Forest is the most accurate model and thus should deliver the most accurate predictions. The model based on Decision Tree is less accurate when compared to GGM and Random Forest.
+
+
+# Application of 3 models to test dataset
+
+Application to Decision Tree  model
+```{r echo=TRUE}
+predictTestSet_DT <- predict(modelDT, newdata=testing, type="class")
+predictTestSet_DT
+```
+
+Application to Generalized Boosted Model
+```{r echo=FALSE}
+predictTestSet_GBM <- predict(modelGBM, newdata=testing)
+predictTestSet_GBM
+```
+
+Application to Random Forest model
+```{r echo=TRUE}
+predictTestSet_RF <- predict(modelRF, newdata=testing)
+predictTestSet_RF
+```
+
+Conclusion:
+Both the 'Generalized Boosted' and the 'Random Forest' models resulted in the same classifications of the test case, while the 'Decision Tree' resulted provided different classifications in 9 cases. The predictions of the 'Generalized Boosted' and the 'Random Forest' models were used for the quiz.
